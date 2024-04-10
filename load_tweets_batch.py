@@ -164,7 +164,7 @@ def bulk_insert(connection, table, rows):
 def insert_tweets(connection, tweets, batch_size=1000):
     '''
     Efficiently inserts many tweets into the database.
-    The tweets iterator is chuncked into batches before insertion.
+    The tweets iterator is chunked into batches before insertion.
 
     Args:
         connection: a sqlalchemy connection to the postgresql db
@@ -389,14 +389,32 @@ def _insert_tweets(connection,input_tweets):
                 })
 
     ######################################## 
+    # STEP 1.5: sort the lists
+    ######################################## 
+
+    users.sort(key=lambda el: el['id_users'])
+    users_unhydrated_from_tweets.sort(key=lambda el: el['id_users'])
+    users_unhydrated_from_mentions.sort(key=lambda el: el['id_users'])
+    tweet_mentions.sort(key=lambda el: (el['id_tweets'], el['id_users']))
+    tweet_tags.sort(key=lambda el: (el['id_tweets'], el['tag']))
+    tweet_media.sort(key=lambda el: (el['id_tweets'], el['id_urls']))
+    tweet_urls.sort(key=lambda el: (el['id_tweets'], el['id_urls']))
+    tweets.sort(key=lambda el: el['id_tweets'])
+
+    ######################################## 
     # STEP 2: perform the actual SQL inserts
     ######################################## 
     with connection.begin() as trans:
-
         # use the bulk_insert function to insert most of the data
         bulk_insert(connection, 'users', users)
+        
+    with connection.begin() as trans:
         bulk_insert(connection, 'users', users_unhydrated_from_tweets)
+
+    with connection.begin() as trans:
         bulk_insert(connection, 'users', users_unhydrated_from_mentions)
+
+    with connection.begin() as trans:
         bulk_insert(connection, 'tweet_mentions', tweet_mentions)
         bulk_insert(connection, 'tweet_tags', tweet_tags)
         bulk_insert(connection, 'tweet_media', tweet_media)
@@ -445,14 +463,14 @@ if __name__ == '__main__':
     # NOTE:
     # we reverse sort the filenames because this results in fewer updates to the users table,
     # which prevents excessive dead tuples and autovacuums
-    with connection.begin() as trans:
-        for filename in sorted(args.inputs, reverse=True):
-            with zipfile.ZipFile(filename, 'r') as archive: 
-                print(datetime.datetime.now(),filename)
-                for subfilename in sorted(archive.namelist(), reverse=True):
-                    with io.TextIOWrapper(archive.open(subfilename)) as f:
-                        tweets = []
-                        for i,line in enumerate(f):
-                            tweet = json.loads(line)
-                            tweets.append(tweet)
-                        insert_tweets(connection,tweets,args.batch_size)
+    # with connection.begin() as trans:
+    for filename in sorted(args.inputs, reverse=True):
+        with zipfile.ZipFile(filename, 'r') as archive: 
+            print(datetime.datetime.now(),filename)
+            for subfilename in sorted(archive.namelist(), reverse=True):
+                with io.TextIOWrapper(archive.open(subfilename)) as f:
+                    tweets = []
+                    for i,line in enumerate(f):
+                        tweet = json.loads(line)
+                        tweets.append(tweet)
+                    insert_tweets(connection,tweets,args.batch_size)
